@@ -237,8 +237,9 @@ class PPO:
                 # Augmentation using symmetry
                 data_augmentation_func = self.symmetry["data_augmentation_func"]
                 # Returned shape: [batch_size * num_aug, ...]
-                obs_batch, actions_batch = data_augmentation_func(
+                obs_batch, actions_batch, next_obs_batch = data_augmentation_func(
                     obs=obs_batch,
+                    next_obs=next_obs_batch,
                     actions=actions_batch,
                     env=self.symmetry["_env"],
                 )
@@ -259,7 +260,8 @@ class PPO:
             mu_batch = self.policy.action_mean[:original_batch_size]
             sigma_batch = self.policy.action_std[:original_batch_size]
             entropy_batch = self.policy.entropy[:original_batch_size]
-
+            # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
+            # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
             vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -329,7 +331,7 @@ class PPO:
                 # Note: If we did augmentation before then we don't need to augment again
                 if not self.symmetry["use_data_augmentation"]:
                     data_augmentation_func = self.symmetry["data_augmentation_func"]
-                    obs_batch, _ = data_augmentation_func(obs=obs_batch, actions=None, env=self.symmetry["_env"])
+                    obs_batch, _, _ = data_augmentation_func(obs=obs_batch, actions=None, next_obs=None, env=self.symmetry["_env"])
                     # Compute number of augmentations per sample
                     num_aug = int(obs_batch.shape[0] / original_batch_size)
 
@@ -341,8 +343,8 @@ class PPO:
                 # earlier since that action was sampled from the distribution. However, the symmetry loss is computed
                 # using the mean of the distribution.
                 action_mean_orig = mean_actions_batch[:original_batch_size]
-                _, actions_mean_symm_batch = data_augmentation_func(
-                    obs=None, actions=action_mean_orig, env=self.symmetry["_env"]
+                _, actions_mean_symm_batch, _ = data_augmentation_func(
+                    obs=None, actions=action_mean_orig, next_obs=None, env=self.symmetry["_env"]
                 )
 
                 # Compute the loss
@@ -429,9 +431,9 @@ class PPO:
             "surrogate": mean_surrogate_loss,
             "entropy": mean_entropy,
             "vae": mean_vae_loss,
-            "vel_loss": mean_vel_loss,
-            "rec_loss": mean_rec_loss,
-            "kl_loss": mean_kl_loss,
+            "vae/vel_loss": mean_vel_loss,
+            "vae/rec_loss": mean_rec_loss,
+            "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss
