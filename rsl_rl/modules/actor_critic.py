@@ -11,7 +11,7 @@ from tensordict import TensorDict
 from torch.distributions import Normal
 from typing import Any, NoReturn
 import copy
-from rsl_rl.networks import MLP, EmpiricalNormalization
+from rsl_rl.networks import MLP, EmpiricalNormalization, Memory
 
 
 class ActorCritic(nn.Module):
@@ -37,6 +37,10 @@ class ActorCritic(nn.Module):
         VAE_decoder_hiden_dim = [128,256,512],
         history_length = 6,
         beta = 1.0,
+        use_gru: bool = True,
+        gru_hidden_dim: int = 256,
+        gru_num_layers: int = 1,
+        gru_type: str = "gru",
         **kwargs: dict[str, Any],
     ) -> None:
         if kwargs:
@@ -65,12 +69,25 @@ class ActorCritic(nn.Module):
         self.VAE_enable = VAE_enable
         self.obs_one_step_num = int(num_actor_obs/history_length)
         self.beta = beta
+        # gru
+        self.use_gru = use_gru
+        self.gru_hidden_dim = gru_hidden_dim
+        self.gru_num_layers = gru_num_layers
+        self.gru_type = gru_type
+        self.gru_input_size = self.obs_one_step_num + self.VAE_latent_dim + self.VAE_latent_estimate_dim
         if self.VAE_enable:
-            self.estimator = MLP(num_actor_obs, (self.VAE_latent_dim+self.VAE_latent_estimate_dim)*2, VAE_encoder_hiden_dim, activation)
+            self.estimator = MLP(num_actor_obs, self.VAE_latent_dim*2+self.VAE_latent_estimate_dim, VAE_encoder_hiden_dim, activation)
             self.decoder = MLP(self.VAE_latent_dim+self.VAE_latent_estimate_dim, int(num_actor_obs/history_length), VAE_decoder_hiden_dim, activation)
             self.actor =  MLP(int(num_actor_obs/history_length)+self.VAE_latent_dim+self.VAE_latent_estimate_dim, num_actions, actor_hidden_dims, activation)
             self.num_actions = num_actions
             # self.actor = AssembleActor(activation)
+            if self.use_gru:
+                self.memory = Memory(
+                input_size=self.gru_input_size, 
+                hidden_dim=self.gru_hidden_dim, 
+                num_layers=self.gru_num_layers, 
+                type=gru_type
+            )
             print(f"VAE Estimator MLP: {self.estimator}")
             print(f"VAE Decoder MLP: {self.decoder}")
         else:
@@ -269,9 +286,9 @@ class ActorCritic(nn.Module):
         next_step_obs_estimate = self.decoder(latent_u)
         latent_var = latent[...,self.VAE_latent_dim+self.VAE_latent_estimate_dim:]
         latent_vel_u = latent_u[...,self.VAE_latent_dim:]
-        latent_vel_var = latent_var[...,self.VAE_latent_dim:]
+        # latent_vel_var = latent_var[...,self.VAE_latent_dim:]
         latent_u = latent_u[...,:self.VAE_latent_dim]
-        latent_var = latent_u[...,:self.VAE_latent_dim]
+        latent_var = latent_var[...,:self.VAE_latent_dim]
         # autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*(-0.5 * torch.sum(1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp())))/self.num_mini_batches
         vel_loss = nn.MSELoss()(latent_vel_u, vel)
         rec_loss = nn.MSELoss()(next_step_obs, next_step_obs_estimate)
