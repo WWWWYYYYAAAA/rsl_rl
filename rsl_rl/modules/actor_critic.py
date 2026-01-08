@@ -66,7 +66,7 @@ class ActorCritic(nn.Module):
         self.obs_one_step_num = int(num_actor_obs/history_length)
         self.beta = beta
         if self.VAE_enable:
-            self.estimator = MLP(num_actor_obs, (self.VAE_latent_dim+self.VAE_latent_estimate_dim)*2, VAE_encoder_hiden_dim, activation)
+            self.estimator = MLP(num_actor_obs, (self.VAE_latent_dim*2+self.VAE_latent_estimate_dim), VAE_encoder_hiden_dim, activation)
             self.decoder = MLP(self.VAE_latent_dim+self.VAE_latent_estimate_dim, int(num_actor_obs/history_length), VAE_decoder_hiden_dim, activation)
             self.actor =  MLP(int(num_actor_obs/history_length)+self.VAE_latent_dim+self.VAE_latent_estimate_dim, num_actions, actor_hidden_dims, activation)
             self.num_actions = num_actions
@@ -269,9 +269,9 @@ class ActorCritic(nn.Module):
         next_step_obs_estimate = self.decoder(latent_u)
         latent_var = latent[...,self.VAE_latent_dim+self.VAE_latent_estimate_dim:]
         latent_vel_u = latent_u[...,self.VAE_latent_dim:]
-        latent_vel_var = latent_var[...,self.VAE_latent_dim:]
+        # latent_vel_var = latent_var[...,self.VAE_latent_dim:]
         latent_u = latent_u[...,:self.VAE_latent_dim]
-        latent_var = latent_u[...,:self.VAE_latent_dim]
+        latent_var = latent_var[...,:self.VAE_latent_dim]
         # autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*(-0.5 * torch.sum(1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp())))/self.num_mini_batches
         vel_loss = nn.MSELoss()(latent_vel_u, vel)
         rec_loss = nn.MSELoss()(next_step_obs, next_step_obs_estimate)
