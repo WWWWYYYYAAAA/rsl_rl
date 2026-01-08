@@ -237,7 +237,7 @@ class PPO:
                 # Augmentation using symmetry
                 data_augmentation_func = self.symmetry["data_augmentation_func"]
                 # Returned shape: [batch_size * num_aug, ...]
-                obs_batch, actions_batch, next_obs_batch = data_augmentation_func(
+                obs_batch, actions_batch, _ = data_augmentation_func(
                     obs=obs_batch,
                     next_obs=next_obs_batch,
                     actions=actions_batch,
@@ -261,8 +261,8 @@ class PPO:
             sigma_batch = self.policy.action_std[:original_batch_size]
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
-            # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
-            vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
+            vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
+            # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
             # print(vae_loss)
