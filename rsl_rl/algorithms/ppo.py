@@ -261,7 +261,7 @@ class PPO:
             sigma_batch = self.policy.action_std[:original_batch_size]
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
-            vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
+            vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -399,7 +399,7 @@ class PPO:
             mean_vae_loss += vae_loss.item()
             mean_vel_loss += vel_loss.item()
             mean_rec_loss += rec_loss.item()
-            mean_kl_loss += kl_loss.item()
+            # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
                 mean_rnd_loss += rnd_loss.item()
@@ -415,7 +415,7 @@ class PPO:
         mean_vae_loss /= num_updates
         mean_vel_loss /= num_updates
         mean_rec_loss /= num_updates
-        mean_kl_loss /= num_updates
+        # mean_kl_loss /= num_updates
         # print(num_updates)
         if mean_rnd_loss is not None:
             mean_rnd_loss /= num_updates
@@ -433,7 +433,7 @@ class PPO:
             "vae": mean_vae_loss,
             "vae/vel_loss": mean_vel_loss,
             "vae/rec_loss": mean_rec_loss,
-            "vae/kl_loss": mean_kl_loss,
+            # "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss
