@@ -266,7 +266,7 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
-            selfamp_loss, left_d_loss, right_d_loss = self.policy.self_amp_train(obs_batch, self.device)
+            selfamp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right = self.policy.self_amp_train(obs_batch, self.device)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -409,6 +409,11 @@ class PPO:
             mean_selfamp_loss += selfamp_loss.item()
             mean_selfamp_loss_left += left_d_loss.item()
             mean_selfamp_loss_right += right_d_loss.item()
+
+            left2left = left2left.item()
+            right2left = right2left.item()
+            right2right = right2right.item()
+            left2right = left2right.item()
             # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
@@ -449,7 +454,11 @@ class PPO:
             "vae/rec_loss": mean_rec_loss,
             "selfamp_loss": selfamp_loss,
             "mean_selfamp_loss_left": mean_selfamp_loss_left,
-            "mean_selfamp_loss_right": mean_selfamp_loss_right
+            "mean_selfamp_loss_right": mean_selfamp_loss_right,
+            "left2left": left2left,
+            "right2left": right2left,
+            "right2right": right2right,
+            "left2right": left2right,
             # "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:

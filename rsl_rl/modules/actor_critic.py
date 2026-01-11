@@ -393,7 +393,7 @@ class ActorCritic(nn.Module):
 
         
 
-        return amp_loss, left_d_loss, right_d_loss
+        return amp_loss, left_d_loss, right_d_loss, left2left.mean(dim=0), right2left.mean(dim=0), right2right.mean(dim=0), left2right.mean(dim=0)
     
     def self_amp_reward(self, obs: TensorDict, device):
         selfamp_obs = self.get_selfamp_obs(obs)
@@ -408,12 +408,12 @@ class ActorCritic(nn.Module):
         amp_reward = self.amp_reward_coef * (torch.clamp(1 - (1/4) * torch.square(right2left - 1), min=0)\
                                              + torch.clamp(1 - (1/4) * torch.square(left2right - 1), min=0))
         return amp_reward.mean(dim=-1)
-    
-    def self_amp_train(self, obs: TensorDict, device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+    def self_amp_train(self, obs: TensorDict, device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         selfamp_obs = self.get_selfamp_obs(obs)
         left_obs, right_obs = self.split_selfamp_obs(selfamp_obs, device)
-        amp_loss, left_d_loss, right_d_loss = self.self_amp_loss(left_obs, right_obs)
-        return amp_loss, left_d_loss, right_d_loss
+        amp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right = self.self_amp_loss(left_obs, right_obs)
+        return amp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right
 
 
 
