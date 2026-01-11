@@ -163,6 +163,7 @@ class PPO:
 
         # Record the rewards and dones
         # Note: We clone here because later on we bootstrap the rewards based on timeouts
+        rewards = rewards + self.policy.self_amp_reward(obs)
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
 
@@ -262,6 +263,7 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
+            selfamp_loss, left_d_loss, right_d_loss = self.policy.self_amp_train(obs_batch)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -325,6 +327,7 @@ class PPO:
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
             # print(loss)
             loss += vae_loss
+            loss += selfamp_loss
             # Symmetry loss
             if self.symmetry:
                 # Obtain the symmetric actions

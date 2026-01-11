@@ -323,12 +323,10 @@ class ActorCritic(nn.Module):
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["selfamp"]]
         return torch.cat(obs_list, dim=-1)
     
-    def split_selfamp_obs(self, selfampobs: TensorDict) -> tuple[torch.Tensor, torch.Tensor]:
+    def split_selfamp_obs(self, selfamp_obs) -> tuple[torch.Tensor, torch.Tensor]:
         # obs_n = selfamp_obs[:,self.self_one_amp_obs_num:]
         # obs_l = selfamp_obs[:,:self.self_one_amp_obs_num]
-        selfamp_obs = self.get_selfamp_obs(selfampobs)
-        self.self_amp_obs_normalizer.update(selfamp_obs)
-        selfamp_obs = self.self_amp_obs_normalizer(selfamp_obs)
+        
 
         obs = selfamp_obs.view(-1, self.self_amp_obs_history_length,self.self_one_amp_obs_num)
         foot = obs[:,:, -self.foot_num:]
@@ -353,7 +351,7 @@ class ActorCritic(nn.Module):
 
         return left_obs, right_obs
     
-    def self_amp_train(self, left_obs, right_obs):
+    def self_amp_loss(self, left_obs, right_obs):
 
         self.self_amp_obs_normalizer.update(left_obs)
         self.self_amp_obs_normalizer.update(right_obs)
@@ -388,10 +386,29 @@ class ActorCritic(nn.Module):
 
         amp_loss = (left_d_loss + right_d_loss)*0.5
 
+        
+
+        return amp_loss, left_d_loss, right_d_loss
+    
+    def self_amp_reward(self, obs: TensorDict):
+        selfamp_obs = self.get_selfamp_obs(obs)
+        self.self_amp_obs_normalizer.update(selfamp_obs)
+        selfamp_obs = self.self_amp_obs_normalizer(selfamp_obs)
+
+        left_obs, right_obs = self.split_selfamp_obs(selfamp_obs)
+
+        right2left = self.left_discriminator(right_obs)
+        left2right = self.right_discriminator(left_obs)
+
         amp_reward = self.amp_reward_coef * (torch.clamp(1 - (1/4) * torch.square(right2left - 1), min=0)\
                                              + torch.clamp(1 - (1/4) * torch.square(left2right - 1), min=0))
-
-        return amp_loss, left_d_loss, right_d_loss, right2left, amp_reward
+        return amp_reward
+    
+    def self_amp_train(self, obs: TensorDict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        selfamp_obs = self.get_selfamp_obs(obs)
+        left_obs, right_obs = self.split_selfamp_obs(selfamp_obs)
+        amp_loss, left_d_loss, right_d_loss = self.self_amp_loss(left_obs, right_obs)
+        return amp_loss, left_d_loss, right_d_loss
 
 
 
