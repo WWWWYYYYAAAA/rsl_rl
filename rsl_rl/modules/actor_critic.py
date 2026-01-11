@@ -225,15 +225,16 @@ class ActorCritic(nn.Module):
     #         return self.actor(obs)
 
     def dwaq_inference(self, obs) -> torch.Tensor:
-        lantent = self.estimator(obs)
+        latent = self.estimator(obs)
         # lantent = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],lantent), dim=-1))
+        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1))
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent), dim=-1))
     
     def dwaq_learn(self, obs):
-        lantent = self.estimator(obs)
+        latent = self.estimator(obs)
         # lantent_u = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],lantent), dim=-1)), lantent
+        # latent = torch.concatenate((latent[..., :self.VAE_latent_dim],latent[...,self.VAE_latent_dim:].detach()), dim=-1)
+        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1)), latent
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent_u), dim=-1)), lantent
 
 
@@ -266,18 +267,19 @@ class ActorCritic(nn.Module):
         # next_step_obs = self.get_actor_obs(next_obs)[...,self.one_step_idx]
         # latent_u = latent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
         #whole latentInput
-        next_step_obs_estimate = self.decoder(latent)
+        latent_detach = torch.concatenate((latent[..., :self.VAE_latent_dim],latent[...,self.VAE_latent_dim:].detach()), dim=-1)
+        next_step_obs_estimate = self.decoder(latent_detach)
         # latent_var = latent[...,self.VAE_latent_dim+self.VAE_latent_estimate_dim:]
         latent_vel_u = latent[...,self.VAE_latent_dim:]
         # latent_vel_var = latent_var[...,self.VAE_latent_dim:]
-        latent_u = latent[...,:self.VAE_latent_dim]
+        # latent_u = latent[...,:self.VAE_latent_dim]
         # latent_var = latent_var[...,:self.VAE_latent_dim]
         # autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*(-0.5 * torch.sum(1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp())))/self.num_mini_batches
         vel_loss = nn.MSELoss()(latent_vel_u, vel)
         rec_loss = nn.MSELoss()(next_step_obs, next_step_obs_estimate)
         # latent_var = torch.clamp(latent_var, max=10.0, min=-20)
         # kl_loss = -0.5 * torch.mean(1 + latent_var - latent_u*latent_u - torch.exp(latent_var))
-        return vel_loss*10.0 + rec_loss*0.4, vel_loss, rec_loss
+        return vel_loss*10.0 + rec_loss, vel_loss, rec_loss
         
 
     def evaluate(self, obs: TensorDict, **kwargs: dict[str, Any]) -> torch.Tensor:
