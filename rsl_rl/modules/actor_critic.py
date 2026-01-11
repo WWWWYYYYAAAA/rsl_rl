@@ -124,7 +124,6 @@ class ActorCritic(nn.Module):
 
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
-
         # self.one_step_idx = [15, 16, 17, 33, 34, 35, 51, 52, 53,
         #                      114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125,
         #                      186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197,
