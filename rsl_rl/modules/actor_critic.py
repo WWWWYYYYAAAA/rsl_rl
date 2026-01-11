@@ -133,6 +133,30 @@ class ActorCritic(nn.Module):
         #                    21,21,21,21,21,21,21,21,21,21,21,21,
         #                    33,33,33,33,33,33,33,33,33,33,33,33,
         #                    45,45,45,45,45,45,45,45,45,45,45,45]
+        # self amp
+        self.self_one_amp_obs_num = 76
+        self.foot_num = 4
+        self.dir_ang_mask = torch.tensor([-1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0,], requires_grad=False).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        self.dir_lin_mask = torch.tensor([1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0,], requires_grad=False).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        self.left_idxs = [3, 4, 5, 9, 10, 11]
+        self.right_idxs = [0, 1, 2, 6, 7, 8]
+        self.left_feet_idxs = [1,3]
+        self.right_feet_idxs = [0,2]
+        self.root_state_num = 16
+        self.obs_lin_num = 24
+        self.obs_ang_num = 36
+        self.self_amp_obs_history_length = 2
+        self.amp_lumbda = 10.0
+        self.amp_reward_coef = 2.0
+        self.use_self_amp = True
+        if self.use_self_amp:
+            input_dimension = int(self.self_one_amp_obs_num*self.self_amp_obs_history_length/2)
+            self.left_discriminator = MLP(input_dimension, 1, [512,256,128], activation)
+            self.right_discriminator = MLP(input_dimension, 1, [512,256,128], activation)
+
+            self.self_amp_obs_normalizer = EmpiricalNormalization(self.self_one_amp_obs_num*self.self_amp_obs_history_length)
+
+        
 
         
 
@@ -294,6 +318,83 @@ class ActorCritic(nn.Module):
     def get_critic_obs(self, obs: TensorDict) -> torch.Tensor:
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["critic"]]
         return torch.cat(obs_list, dim=-1)
+    
+    def get_selfamp_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["selfamp"]]
+        return torch.cat(obs_list, dim=-1)
+    
+    def split_selfamp_obs(self, selfampobs: TensorDict) -> tuple[torch.Tensor, torch.Tensor]:
+        # obs_n = selfamp_obs[:,self.self_one_amp_obs_num:]
+        # obs_l = selfamp_obs[:,:self.self_one_amp_obs_num]
+        selfamp_obs = self.get_selfamp_obs(selfampobs)
+        self.self_amp_obs_normalizer.update(selfamp_obs)
+        selfamp_obs = self.self_amp_obs_normalizer(selfamp_obs)
+
+        obs = selfamp_obs.view(-1, self.self_amp_obs_history_length,self.self_one_amp_obs_num)
+        foot = obs[:,:, -self.foot_num:]
+        left_foot = foot[:,:, self.left_feet_idxs].view(-1, self.self_amp_obs_history_length, int(self.foot_num/2))
+        right_foot = foot[:,:, self.right_feet_idxs].view(-1, self.self_amp_obs_history_length, int(self.foot_num/2))
+        
+        root = obs[:, :, :self.root_state_num].view(-1, self.self_amp_obs_history_length, self.root_state_num)
+        obs_ang = obs[:, :,self.root_state_num:-self.foot_num-self.obs_lin_num].view(-1, -1, -1, 12)
+        obs_ang = obs_ang * self.dir_ang_mask
+
+        obs_lin = obs[:, :, -self.foot_num-self.obs_lin_num:-self.foot_num].view(-1, -1, -1, 12)
+        obs_lin = obs_lin * self.dir_lin_mask
+
+        left_obs_ang = obs_ang[:, :, :, self.left_idxs].view(-1, self.self_amp_obs_history_length, int(self.obs_ang_num/2))
+        right_obs_ang = obs_ang[:, :, :, self.right_idxs].view(-1, self.self_amp_obs_history_length, int(self.obs_ang_num/2))
+
+        left_obs_lin = obs_lin[:, :, :, self.left_idxs].view(-1, self.self_amp_obs_history_length, int(self.obs_lin_num/2))
+        right_obs_lin = obs_lin[:, :, :, self.right_idxs].view(-1, self.self_amp_obs_history_length, int(self.obs_lin_num/2))
+
+        left_obs = torch.cat((root, left_obs_ang, left_obs_lin, left_foot), dim=-1).view(-1, int(self.self_amp_obs_history_length*self.self_one_amp_obs_num/2))
+        right_obs = torch.cat((root, right_obs_ang, right_obs_lin, right_foot), dim=-1).view(-1, int(self.self_amp_obs_history_length*self.self_one_amp_obs_num/2))
+
+        return left_obs, right_obs
+    
+    def self_amp_train(self, left_obs, right_obs):
+
+        self.self_amp_obs_normalizer.update(left_obs)
+        self.self_amp_obs_normalizer.update(right_obs)
+
+        left2left = self.left_discriminator(left_obs)
+        right2left = self.left_discriminator(right_obs)
+
+        right2right = self.right_discriminator(right_obs)
+        left2right = self.right_discriminator(left_obs)
+
+        left_motion_gradient = torch.autograd.grad(
+            outputs=left2left,  
+            inputs=left_obs, 
+            grad_outputs=torch.ones_like(left2left),  
+            create_graph=True,  
+            retain_graph=True,  
+            only_inputs=True
+        )[0]
+
+        right_motion_gradient = torch.autograd.grad(
+            outputs=right2right,
+            inputs=right_obs,
+            grad_outputs=torch.ones_like(right2right),
+            create_graph=True,  
+            retain_graph=True,  
+        )[0]
+
+        
+
+        left_d_loss = 0.5 * (nn.MSELoss()(left2left,1)+ nn.MSELoss()(right2left,-1)) + nn.MSELoss()(left_motion_gradient, 0)*self.amp_lumbda
+        right_d_loss = 0.5 * (nn.MSELoss()(right2right,1)+ nn.MSELoss()(left2right,-1)) + nn.MSELoss()(right_motion_gradient, 0)*self.amp_lumbda
+
+        amp_loss = (left_d_loss + right_d_loss)*0.5
+
+        amp_reward = self.amp_reward_coef * (torch.clamp(1 - (1/4) * torch.square(right2left - 1), min=0)\
+                                             + torch.clamp(1 - (1/4) * torch.square(left2right - 1), min=0))
+
+        return amp_loss, left_d_loss, right_d_loss, right2left, amp_reward
+
+
+
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
         return self.distribution.log_prob(actions).sum(dim=-1)
