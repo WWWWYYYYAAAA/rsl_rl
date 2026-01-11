@@ -200,6 +200,9 @@ class PPO:
         mean_vel_loss = 0
         mean_rec_loss = 0
         mean_kl_loss = 0
+        mean_selfamp_loss = 0
+        mean_selfamp_loss_left = 0
+        mean_selfamp_loss_right = 0
         # RND loss
         mean_rnd_loss = 0 if self.rnd else None
         # Symmetry loss
@@ -402,6 +405,10 @@ class PPO:
             mean_vae_loss += vae_loss.item()
             mean_vel_loss += vel_loss.item()
             mean_rec_loss += rec_loss.item()
+            
+            mean_selfamp_loss += selfamp_loss.item()
+            mean_selfamp_loss_left += left_d_loss.item()
+            mean_selfamp_loss_right += right_d_loss.item()
             # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
@@ -418,6 +425,10 @@ class PPO:
         mean_vae_loss /= num_updates
         mean_vel_loss /= num_updates
         mean_rec_loss /= num_updates
+        
+        mean_selfamp_loss /= num_updates
+        mean_selfamp_loss_left /= num_updates
+        mean_selfamp_loss_right /= num_updates
         # mean_kl_loss /= num_updates
         # print(num_updates)
         if mean_rnd_loss is not None:
@@ -436,6 +447,9 @@ class PPO:
             "vae": mean_vae_loss,
             "vae/vel_loss": mean_vel_loss,
             "vae/rec_loss": mean_rec_loss,
+            "selfamp_loss": selfamp_loss,
+            "mean_selfamp_loss_left": mean_selfamp_loss_left,
+            "mean_selfamp_loss_right": mean_selfamp_loss_right
             # "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:
