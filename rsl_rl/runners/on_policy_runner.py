@@ -106,7 +106,9 @@ class OnPolicyRunner:
                     obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
                     # Move to device
                     obs, rewards, dones = (obs.to(self.device), rewards.to(self.device), dones.to(self.device))
-                    
+                    # amp_reward =  self.alg.policy.self_amp_reward(obs, self.device)
+                    # print(rewards.shape, amp_reward.shape)
+                    # rewards = rewards + amp_reward
                     self.alg.transition.next_observations = obs
                     # Process the step
                     self.alg.process_env_step(obs, rewards, dones, extras)

@@ -11,7 +11,7 @@ import torch.optim as optim
 from itertools import chain
 from tensordict import TensorDict
 
-from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, Discriminator
 from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import RolloutStorage
 from rsl_rl.utils import string_to_callable
@@ -100,8 +100,11 @@ class PPO:
         self.policy = policy
         self.policy.to(self.device)
 
+        self.discriminator = Discriminator().to(self.device)
+
         # Create optimizer
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
+        # self.amp_optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
 
         # Create rollout storage
         self.storage: RolloutStorage | None = None
@@ -163,8 +166,8 @@ class PPO:
 
         # Record the rewards and dones
         # Note: We clone here because later on we bootstrap the rewards based on timeouts
-        rewards = rewards + self.policy.self_amp_reward(obs, self.device)
-        self.transition.rewards = rewards.clone()
+        amp_reward =  self.policy.self_amp_reward(obs, self.device)
+        self.transition.rewards = rewards.clone() + amp_reward.clone()
         self.transition.dones = dones
 
         # Compute the intrinsic rewards and add to extrinsic rewards
@@ -266,11 +269,13 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
-            selfamp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right = self.policy.self_amp_train(obs_batch, self.device)
+            selfamp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right, amp_reward = self.policy.self_amp_train(obs_batch, self.device)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
             # print(vae_loss)
+            # self.amp_optimizer.zero_grad()
+            # selfamp_loss.backward()
 
             # Compute KL divergence and adapt the learning rate
             if self.desired_kl is not None and self.schedule == "adaptive":
@@ -410,10 +415,11 @@ class PPO:
             mean_selfamp_loss_left += left_d_loss.item()
             mean_selfamp_loss_right += right_d_loss.item()
 
-            left2left = left2left.item()
-            right2left = right2left.item()
-            right2right = right2right.item()
-            left2right = left2right.item()
+            left2left_m = left2left.item()
+            right2left_m = right2left.item()
+            right2right_m = right2right.item()
+            left2right_m = left2right.item()
+            amp_reward_m = amp_reward.item()
             # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
@@ -455,10 +461,11 @@ class PPO:
             "selfamp_loss": selfamp_loss,
             "mean_selfamp_loss_left": mean_selfamp_loss_left,
             "mean_selfamp_loss_right": mean_selfamp_loss_right,
-            "left2left": left2left,
-            "right2left": right2left,
-            "right2right": right2right,
-            "left2right": left2right,
+            "left2left": left2left_m,
+            "right2left": right2left_m,
+            "right2right": right2right_m,
+            "left2right": left2right_m,
+            "amp_reward": amp_reward_m,
             # "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:

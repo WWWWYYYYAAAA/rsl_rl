@@ -11,6 +11,7 @@ from .rnd import RandomNetworkDistillation, resolve_rnd_config
 from .student_teacher import StudentTeacher
 from .student_teacher_recurrent import StudentTeacherRecurrent
 from .symmetry import resolve_symmetry_config
+from .selfamp_discriminator import Discriminator
 
 __all__ = [
     "ActorCritic",
@@ -20,4 +21,5 @@ __all__ = [
     "StudentTeacherRecurrent",
     "resolve_rnd_config",
     "resolve_symmetry_config",
+    "Discriminator",
 ]
