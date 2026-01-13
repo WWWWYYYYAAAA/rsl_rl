@@ -52,7 +52,7 @@ class Discriminator(nn.Module):
         self.obs_ang_num = 36
         self.self_amp_obs_history_length = 2
         self.amp_lumbda = 10.0
-        self.amp_reward_coef = 0.05
+        self.amp_reward_coef = 0.2
         self.use_self_amp = True
         if self.use_self_amp:
             input_dimension = self.self_one_amp_obs_num_half * self.self_amp_obs_history_length
