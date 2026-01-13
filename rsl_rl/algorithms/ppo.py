@@ -430,9 +430,9 @@ class PPO:
             "value_function": mean_value_loss,
             "surrogate": mean_surrogate_loss,
             "entropy": mean_entropy,
-            "vae": mean_vae_loss,
-            "vae/vel_loss": mean_vel_loss,
-            "vae/rec_loss": mean_rec_loss,
+            "ae": mean_vae_loss,
+            "ae/vel_loss": mean_vel_loss,
+            "ae/rec_loss": mean_rec_loss,
             # "vae/kl_loss": mean_kl_loss,
         }
         if self.rnd:

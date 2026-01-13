@@ -32,7 +32,7 @@ class ActorCritic(nn.Module):
         state_dependent_std: bool = False,
         VAE_enable: bool = True,
         VAE_latent_dim = 16,
-        VAE_latent_estimate_dim = 3,
+        VAE_latent_estimate_dim = 7,
         VAE_encoder_hiden_dim = [512,256,128],
         VAE_decoder_hiden_dim = [128,256,512],
         history_length = 6,
@@ -250,7 +250,7 @@ class ActorCritic(nn.Module):
                 return self.actor(obs)
             
     def vae_loss(self, obs, next_obs, latent):
-        vel = self.get_critic_obs(obs)[...,:3]
+        est_obs = self.get_extra_obs(obs)[...,:7]
         # print(self.get_actor_obs(obs).shape)
         next_step_obs = self.get_actor_obs(next_obs)[...,-self.obs_one_step_num:]
         # print(next_step_obs[0,:])
@@ -260,12 +260,12 @@ class ActorCritic(nn.Module):
         latent_detach = torch.concatenate((latent[..., :self.VAE_latent_dim],latent[...,self.VAE_latent_dim:].detach()), dim=-1)
         next_step_obs_estimate = self.decoder(latent_detach)
         # latent_var = latent[...,self.VAE_latent_dim+self.VAE_latent_estimate_dim:]
-        latent_vel_u = latent[...,self.VAE_latent_dim:]
+        latent_est_u = latent[...,self.VAE_latent_dim:]
         # latent_vel_var = latent_var[...,self.VAE_latent_dim:]
         # latent_u = latent[...,:self.VAE_latent_dim]
         # latent_var = latent_var[...,:self.VAE_latent_dim]
         # autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*(-0.5 * torch.sum(1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp())))/self.num_mini_batches
-        vel_loss = nn.MSELoss()(latent_vel_u, vel)
+        vel_loss = nn.MSELoss()(latent_est_u, est_obs)
         rec_loss = nn.MSELoss()(next_step_obs, next_step_obs_estimate)
         # latent_var = torch.clamp(latent_var, max=10.0, min=-20)
         # kl_loss = -0.5 * torch.mean(1 + latent_var - latent_u*latent_u - torch.exp(latent_var))
@@ -283,6 +283,10 @@ class ActorCritic(nn.Module):
 
     def get_critic_obs(self, obs: TensorDict) -> torch.Tensor:
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["critic"]]
+        return torch.cat(obs_list, dim=-1)
+    
+    def get_extra_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["extra"]]
         return torch.cat(obs_list, dim=-1)
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
