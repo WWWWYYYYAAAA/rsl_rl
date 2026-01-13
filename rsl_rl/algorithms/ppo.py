@@ -104,7 +104,7 @@ class PPO:
 
         # Create optimizer
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
-        # self.amp_optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
+        self.amp_optimizer = optim.Adam(self.discriminator.parameters(), lr=5e-4)
 
         # Create rollout storage
         self.storage: RolloutStorage | None = None
@@ -166,8 +166,9 @@ class PPO:
 
         # Record the rewards and dones
         # Note: We clone here because later on we bootstrap the rewards based on timeouts
-        amp_reward =  self.policy.self_amp_reward(obs, self.device)
-        self.transition.rewards = rewards.clone() + amp_reward.clone()
+        # amp_reward =  self.discriminator.self_amp_reward(obs, self.device)
+        # print(rewards, amp_reward)
+        self.transition.rewards = rewards.clone() #+ amp_reward.clone()
         self.transition.dones = dones
 
         # Compute the intrinsic rewards and add to extrinsic rewards
@@ -206,6 +207,13 @@ class PPO:
         mean_selfamp_loss = 0
         mean_selfamp_loss_left = 0
         mean_selfamp_loss_right = 0
+
+        left2left_m = 0
+        right2left_m = 0
+        right2right_m = 0
+        left2right_m = 0
+        amp_reward_m = 0
+        
         # RND loss
         mean_rnd_loss = 0 if self.rnd else None
         # Symmetry loss
@@ -269,13 +277,14 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
-            selfamp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right, amp_reward = self.policy.self_amp_train(obs_batch, self.device)
+            selfamp_loss, left_d_loss, right_d_loss, left2left, right2left, right2right, left2right, amp_reward = self.discriminator.self_amp_train(obs_batch, self.device)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
             # print(vae_loss)
-            # self.amp_optimizer.zero_grad()
-            # selfamp_loss.backward()
+            self.amp_optimizer.zero_grad()
+            selfamp_loss.backward()
+            self.amp_optimizer.step()
 
             # Compute KL divergence and adapt the learning rate
             if self.desired_kl is not None and self.schedule == "adaptive":
@@ -335,7 +344,7 @@ class PPO:
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
             # print(loss)
             loss += vae_loss
-            loss += selfamp_loss
+            # loss += selfamp_loss
             # Symmetry loss
             if self.symmetry:
                 # Obtain the symmetric actions
@@ -413,13 +422,13 @@ class PPO:
             
             mean_selfamp_loss += selfamp_loss.item()
             mean_selfamp_loss_left += left_d_loss.item()
-            mean_selfamp_loss_right += right_d_loss.item()
+            # mean_selfamp_loss_right += right_d_loss.item()
 
-            left2left_m = left2left.item()
-            right2left_m = right2left.item()
-            right2right_m = right2right.item()
-            left2right_m = left2right.item()
-            amp_reward_m = amp_reward.item()
+            left2left_m += left2left.item()
+            right2left_m += right2left.item()
+            # right2right_m = right2right.item()
+            # left2right_m = left2right.item()
+            amp_reward_m += amp_reward.item()
             # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
@@ -439,7 +448,10 @@ class PPO:
         
         mean_selfamp_loss /= num_updates
         mean_selfamp_loss_left /= num_updates
-        mean_selfamp_loss_right /= num_updates
+        # mean_selfamp_loss_right /= num_updates
+        left2left_m /= num_updates
+        right2left_m /= num_updates
+        amp_reward_m /= num_updates
         # mean_kl_loss /= num_updates
         # print(num_updates)
         if mean_rnd_loss is not None:
@@ -455,16 +467,18 @@ class PPO:
             "value_function": mean_value_loss,
             "surrogate": mean_surrogate_loss,
             "entropy": mean_entropy,
-            "vae": mean_vae_loss,
-            "vae/vel_loss": mean_vel_loss,
-            "vae/rec_loss": mean_rec_loss,
+            "ae": mean_vae_loss,
+            "ae/vel_loss": mean_vel_loss,
+            "ae/rec_loss": mean_rec_loss,
+        }
+        selfamp_dict = {
             "selfamp_loss": selfamp_loss,
             "mean_selfamp_loss_left": mean_selfamp_loss_left,
-            "mean_selfamp_loss_right": mean_selfamp_loss_right,
+            # "mean_selfamp_loss_right": mean_selfamp_loss_right,
             "left2left": left2left_m,
             "right2left": right2left_m,
-            "right2right": right2right_m,
-            "left2right": left2right_m,
+            # "right2right": right2right_m,
+            # "left2right": left2right_m,
             "amp_reward": amp_reward_m,
             # "vae/kl_loss": mean_kl_loss,
         }
@@ -473,7 +487,7 @@ class PPO:
         if self.symmetry:
             loss_dict["symmetry"] = mean_symmetry_loss
 
-        return loss_dict
+        return loss_dict, selfamp_dict
 
     def broadcast_parameters(self) -> None:
         """Broadcast model parameters to all GPUs."""

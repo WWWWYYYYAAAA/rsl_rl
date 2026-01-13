@@ -106,9 +106,9 @@ class OnPolicyRunner:
                     obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
                     # Move to device
                     obs, rewards, dones = (obs.to(self.device), rewards.to(self.device), dones.to(self.device))
-                    # amp_reward =  self.alg.policy.self_amp_reward(obs, self.device)
-                    # print(rewards.shape, amp_reward.shape)
-                    # rewards = rewards + amp_reward
+                    amp_reward =  self.alg.discriminator.self_amp_reward(obs, self.device)
+                    # print(torch.sum(rewards), torch.sum(amp_reward))
+                    rewards = rewards + amp_reward
                     self.alg.transition.next_observations = obs
                     # Process the step
                     self.alg.process_env_step(obs, rewards, dones, extras)
@@ -149,7 +149,7 @@ class OnPolicyRunner:
                 self.alg.compute_returns(obs)
 
             # Update policy
-            loss_dict = self.alg.update()
+            loss_dict, selfamp_dict = self.alg.update()
 
             stop = time.time()
             learn_time = stop - start
@@ -214,6 +214,8 @@ class OnPolicyRunner:
         # Log losses
         for key, value in locs["loss_dict"].items():
             self.writer.add_scalar(f"Loss/{key}", value, locs["it"])
+        for key, value in locs["selfamp_dict"].items():
+            self.writer.add_scalar(f"AMP/{key}", value, locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
 
         # Log noise std
@@ -253,6 +255,8 @@ class OnPolicyRunner:
             # Print losses
             for key, value in locs["loss_dict"].items():
                 log_string += f"""{f"Mean {key} loss:":>{pad}} {value:.4f}\n"""
+            for key, value in locs["selfamp_dict"].items():
+                log_string += f"""{f"AMP {key}:":>{pad}} {value:.4f}\n"""
             # Print rewards
             if hasattr(self.alg, "rnd") and self.alg.rnd:
                 log_string += (
@@ -271,6 +275,8 @@ class OnPolicyRunner:
                 f"""{"Mean action noise std:":>{pad}} {mean_std.item():.2f}\n"""
             )
             for key, value in locs["loss_dict"].items():
+                log_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
+            for key, value in locs["selfamp_dict"].items():
                 log_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
 
         log_string += ep_string
