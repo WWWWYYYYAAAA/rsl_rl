@@ -27,6 +27,7 @@ class RolloutStorage:
             self.action_sigma: torch.Tensor | None = None
             self.hidden_states: tuple[HiddenState, HiddenState] = (None, None)
             self.next_observations: TensorDict | None = None
+            self.current_observations_predict: torch.Tensor | None = None
 
         def clear(self) -> None:
             self.__init__()
@@ -38,6 +39,7 @@ class RolloutStorage:
         num_transitions_per_env: int,
         obs: TensorDict,
         actions_shape: tuple[int] | list[int],
+        predict_obs_num: int = 45,
         device: str = "cpu",
     ) -> None:
         self.training_type = training_type
@@ -45,6 +47,8 @@ class RolloutStorage:
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
         self.actions_shape = actions_shape
+
+        self.predict_obs_num = predict_obs_num
 
         # Core
         self.observations = TensorDict(
@@ -57,6 +61,8 @@ class RolloutStorage:
             batch_size=[num_transitions_per_env, num_envs],
             device=self.device,
         )
+        self.current_observations_predict = torch.zeros(num_transitions_per_env, num_envs, predict_obs_num, device=self.device)
+
         self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
@@ -89,6 +95,7 @@ class RolloutStorage:
         # Core
         self.observations[self.step].copy_(transition.observations)
         self.next_observations[self.step].copy_(transition.next_observations)
+        self.current_observations_predict[self.step].copy_(transition.current_observations_predict)
         self.actions[self.step].copy_(transition.actions)
         self.rewards[self.step].copy_(transition.rewards.view(-1, 1))
         self.dones[self.step].copy_(transition.dones.view(-1, 1))
@@ -163,7 +170,7 @@ class RolloutStorage:
             raise ValueError("This function is only available for distillation training.")
 
         for i in range(self.num_transitions_per_env):
-            yield self.observations[i], self.actions[i], self.privileged_actions[i], self.dones[i], self.next_observations[i]
+            yield self.observations[i], self.actions[i], self.privileged_actions[i], self.dones[i], self.next_observations[i], self.current_observations_predict[i]
 
     # For reinforcement learning with feedforward networks
     def mini_batch_generator(self, num_mini_batches: int, num_epochs: int = 8) -> Generator:
@@ -176,6 +183,7 @@ class RolloutStorage:
         # Core
         observations = self.observations.flatten(0, 1)
         next_observations = self.next_observations.flatten(0, 1)
+        current_observations_predict = self.current_observations_predict.flatten(0, 1)
         actions = self.actions.flatten(0, 1)
         values = self.values.flatten(0, 1)
         returns = self.returns.flatten(0, 1)
@@ -196,6 +204,7 @@ class RolloutStorage:
                 # Create the mini-batch
                 obs_batch = observations[batch_idx]
                 next_obs_batch = next_observations[batch_idx]
+                cur_obs_pred_batch = current_observations_predict[batch_idx]
                 actions_batch = actions[batch_idx]
                 target_values_batch = values[batch_idx]
                 returns_batch = returns[batch_idx]
@@ -224,6 +233,7 @@ class RolloutStorage:
                     ),
                     masks_batch,
                     next_obs_batch,
+                    cur_obs_pred_batch,
                 )
 
     # For reinforcement learning with recurrent networks

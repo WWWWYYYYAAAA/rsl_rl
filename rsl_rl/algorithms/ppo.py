@@ -140,11 +140,13 @@ class PPO:
             self.device,
         )
 
-    def act(self, obs: TensorDict) -> torch.Tensor:
+    def act(self, obs: TensorDict, cur_obs_pred_batch) -> torch.Tensor:
         if self.policy.is_recurrent:
             self.transition.hidden_states = self.policy.get_hidden_states()
         # Compute the actions and values
-        self.transition.actions = self.policy.act(obs)[0].detach()
+        actions, _, current_observations_predict = self.policy.act(obs, self.transition.current_observations_predict)
+        self.transition.actions = actions.detach()
+        self.transition.current_observations_predict = current_observations_predict.detach()
         self.transition.values = self.policy.evaluate(obs).detach()
         self.transition.actions_log_prob = self.policy.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.policy.action_mean.detach()
@@ -223,6 +225,7 @@ class PPO:
             hidden_states_batch,
             masks_batch,
             next_obs_batch,
+            cur_obs_pred_batch,
         ) in generator:
             num_aug = 1  # Number of augmentations per sample. Starts at 1 for no augmentation.
             original_batch_size = obs_batch.batch_size[0]
@@ -253,7 +256,7 @@ class PPO:
 
             # Recompute actions log prob and entropy for current batch of transitions
             # Note: We need to do this because we updated the policy with the new parameters
-            _, latent = self.policy.act(obs_batch, masks=masks_batch, hidden_state=hidden_states_batch[0])
+            _, latent, pred_obs = self.policy.act(obs_batch, cur_obs_pred_batch, masks=masks_batch, hidden_state=hidden_states_batch[0])
             actions_log_prob_batch = self.policy.get_actions_log_prob(actions_batch)
             value_batch = self.policy.evaluate(obs_batch, masks=masks_batch, hidden_state=hidden_states_batch[1])
             # Note: We only keep the entropy of the first augmentation (the original one)

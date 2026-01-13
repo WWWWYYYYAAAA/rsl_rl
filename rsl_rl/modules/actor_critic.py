@@ -32,7 +32,7 @@ class ActorCritic(nn.Module):
         state_dependent_std: bool = False,
         VAE_enable: bool = True,
         VAE_latent_dim = 16,
-        VAE_latent_estimate_dim = 7,
+        VAE_latent_estimate_dim = 8,
         VAE_encoder_hiden_dim = [512,256,128],
         VAE_decoder_hiden_dim = [128,256,512],
         history_length = 6,
@@ -64,15 +64,17 @@ class ActorCritic(nn.Module):
         self.VAE_latent_estimate_dim = VAE_latent_estimate_dim #3 velocity
         self.VAE_enable = VAE_enable
         self.obs_one_step_num = int(num_actor_obs/history_length)
+        self.depth_num = 2*64*48
+        self.policy_obs_num = int(num_actor_obs/history_length) + self.depth_num
         self.beta = beta
         if self.VAE_enable:
-            self.estimator = MLP(num_actor_obs, (self.VAE_latent_dim+self.VAE_latent_estimate_dim), VAE_encoder_hiden_dim, activation)
+            self.encoder = MLP(num_actor_obs, (self.VAE_latent_dim+self.VAE_latent_estimate_dim), VAE_encoder_hiden_dim, activation)
             self.decoder = MLP(self.VAE_latent_dim+self.VAE_latent_estimate_dim, int(num_actor_obs/history_length), VAE_decoder_hiden_dim, activation)
             self.actor =  MLP(int(num_actor_obs/history_length)+self.VAE_latent_dim+self.VAE_latent_estimate_dim, num_actions, actor_hidden_dims, activation)
             self.num_actions = num_actions
             # self.actor = AssembleActor(activation)
-            print(f"VAE Estimator MLP: {self.estimator}")
-            print(f"VAE Decoder MLP: {self.decoder}")
+            print(f"AE Encoder MLP: {self.encoder}")
+            print(f"AE Decoder MLP: {self.decoder}")
         else:
             if self.state_dependent_std:
                 self.actor = MLP(num_actor_obs, [2, num_actions], actor_hidden_dims, activation)
@@ -164,9 +166,10 @@ class ActorCritic(nn.Module):
             return torch.ones(self.num_actions) * 0.1
         return self.distribution.entropy().sum(dim=-1)
 
-    def _update_distribution(self, obs: TensorDict):
+    def _update_distribution(self, obs):
         if self.VAE_enable:
-            mean, latent = self.dwaq_learn(obs)
+            mean, latent, pred_obs = self.dwaq_learn(obs)
+            pred_obs = self.decoder(latent)
             # Compute standard deviation
             if self.noise_std_type == "scalar":
                 std = self.std.expand_as(mean)
@@ -175,7 +178,7 @@ class ActorCritic(nn.Module):
             else:
                 raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
             self.distribution = Normal(mean, std)
-            return latent
+            return latent, pred_obs
         else:
             if self.state_dependent_std:
                 # Compute mean and standard deviation
@@ -214,44 +217,54 @@ class ActorCritic(nn.Module):
     #     else:
     #         return self.actor(obs)
 
-    def dwaq_inference(self, obs) -> torch.Tensor:
-        latent = self.estimator(obs)
+    def dwaq_inference(self, obs) -> torch.Tensor: #tuple[torch.Tensor, torch.Tensor]:
+        latent = self.encoder(obs)
         # lantent = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1))
+        return torch.cat((self.actor(torch.cat((obs[...,-self.policy_obs_num:],latent), dim=-1)), self.decoder(latent)), dim=-1)
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent), dim=-1))
     
     def dwaq_learn(self, obs):
-        latent = self.estimator(obs)
+        latent = self.encoder(obs)
         # lantent_u = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
         # latent = torch.concatenate((latent[..., :self.VAE_latent_dim],latent[...,self.VAE_latent_dim:].detach()), dim=-1)
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1)), latent
+        return self.actor(torch.cat((obs[...,-self.policy_obs_num:],latent), dim=-1)), latent, self.decoder(latent)
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent_u), dim=-1)), lantent
 
 
-    def act(self, obs: TensorDict, **kwargs: dict[str, Any]):
-        obs = self.get_actor_obs(obs)
-        obs = self.actor_obs_normalizer(obs)
+    def act(self, obs: TensorDict, cur_obs_pred: torch.Tensor, **kwargs: dict[str, Any]):
+        obs_actor = self.get_actor_obs(obs)
+        depth_obs = self.get_depth_obs(obs)
         if self.VAE_enable:
-            latent = self._update_distribution(obs)
-            return self.distribution.sample(), latent
-        else:
-            self._update_distribution(obs)
-            return self.distribution.sample()
+            obs_diff = (cur_obs_pred - obs_actor[..., -self.obs_one_step_num:])
+            obs_actor = torch.cat((obs_actor, depth_obs))
+            obs_actor = self.actor_obs_normalizer(obs_actor)
+            obs_actor = torch.cat((obs_actor, obs_diff), dim=-1)
+            latent, pred_obs = self._update_distribution(obs_actor)
+            return self.distribution.sample(), latent, pred_obs
+        # else:
+        #     self._update_distribution(obs_actor)
+        #     return self.distribution.sample()
 
-    def act_inference(self, obs: TensorDict) -> torch.Tensor:
-        obs = self.get_actor_obs(obs)
-        obs = self.actor_obs_normalizer(obs)
+    def act_inference(self, obs: TensorDict, cur_obs_pred):
+        
+        obs_actor = self.get_actor_obs(obs)
+        depth_obs = self.get_depth_obs(obs)
         if self.VAE_enable:
-            return self.dwaq_inference(obs)
+            obs_diff = (cur_obs_pred - obs_actor[..., -self.obs_one_step_num:])
+            obs_actor = torch.cat((obs_actor, depth_obs))
+            obs_actor = self.actor_obs_normalizer(obs_actor)
+            obs_actor = torch.cat((obs_actor, obs_diff), dim=-1)
+            return self.dwaq_inference(obs_actor)
         else:
+            obs_actor = self.actor_obs_normalizer(obs_actor)
             if self.state_dependent_std:
-                return self.actor(obs)[..., 0, :]
+                return self.actor(obs_actor)[..., 0, :]
             else:
-                return self.actor(obs)
+                return self.actor(obs_actor)
             
     def ae_loss(self, obs, next_obs, latent):
-        est_obs = self.get_extra_obs(obs)[...,:7]
-        # print(self.get_actor_obs(obs).shape)
+        est_obs = self.get_extra_obs(obs)[...,:self.VAE_latent_estimate_dim]
+        # print(est_obs[:, 3].mean(-1))
         next_step_obs = self.get_actor_obs(next_obs)[...,-self.obs_one_step_num:]
         # print(next_step_obs[0,:])
         # next_step_obs = self.get_actor_obs(next_obs)[...,self.one_step_idx]
@@ -287,6 +300,10 @@ class ActorCritic(nn.Module):
     
     def get_extra_obs(self, obs: TensorDict) -> torch.Tensor:
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["extra"]]
+        return torch.cat(obs_list, dim=-1)
+    
+    def get_depth_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["depth"]]
         return torch.cat(obs_list, dim=-1)
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
