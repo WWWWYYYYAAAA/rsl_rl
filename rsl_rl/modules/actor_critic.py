@@ -249,7 +249,7 @@ class ActorCritic(nn.Module):
             else:
                 return self.actor(obs)
             
-    def vae_loss(self, obs, next_obs, latent):
+    def ae_loss(self, obs, next_obs, latent):
         est_obs = self.get_extra_obs(obs)[...,:7]
         # print(self.get_actor_obs(obs).shape)
         next_step_obs = self.get_actor_obs(next_obs)[...,-self.obs_one_step_num:]

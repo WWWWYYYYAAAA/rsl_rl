@@ -195,7 +195,7 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy = 0
-        mean_vae_loss = 0
+        mean_ae_loss = 0
         mean_vel_loss = 0
         mean_rec_loss = 0
         mean_kl_loss = 0
@@ -261,7 +261,7 @@ class PPO:
             sigma_batch = self.policy.action_std[:original_batch_size]
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
-            vae_loss, vel_loss, rec_loss = self.policy.vae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
+            ae_loss, vel_loss, rec_loss = self.policy.ae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -324,7 +324,7 @@ class PPO:
 
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
             # print(loss)
-            loss += vae_loss
+            loss += ae_loss
             # Symmetry loss
             if self.symmetry:
                 # Obtain the symmetric actions
@@ -396,7 +396,7 @@ class PPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy += entropy_batch.mean().item()
-            mean_vae_loss += vae_loss.item()
+            mean_ae_loss += ae_loss.item()
             mean_vel_loss += vel_loss.item()
             mean_rec_loss += rec_loss.item()
             # mean_kl_loss += kl_loss.item()
@@ -412,7 +412,7 @@ class PPO:
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy /= num_updates
-        mean_vae_loss /= num_updates
+        mean_ae_loss /= num_updates
         mean_vel_loss /= num_updates
         mean_rec_loss /= num_updates
         # mean_kl_loss /= num_updates
@@ -430,7 +430,7 @@ class PPO:
             "value_function": mean_value_loss,
             "surrogate": mean_surrogate_loss,
             "entropy": mean_entropy,
-            "ae": mean_vae_loss,
+            "ae": mean_ae_loss,
             "ae/vel_loss": mean_vel_loss,
             "ae/rec_loss": mean_rec_loss,
             # "vae/kl_loss": mean_kl_loss,
