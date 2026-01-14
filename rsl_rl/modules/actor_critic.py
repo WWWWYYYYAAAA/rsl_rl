@@ -32,7 +32,7 @@ class ActorCritic(nn.Module):
         state_dependent_std: bool = False,
         VAE_enable: bool = True,
         VAE_latent_dim = 16,
-        VAE_latent_estimate_dim = 7,
+        VAE_latent_estimate_dim = 8,
         VAE_encoder_hiden_dim = [512,256,128],
         VAE_decoder_hiden_dim = [128,256,512],
         history_length = 6,
