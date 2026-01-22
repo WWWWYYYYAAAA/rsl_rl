@@ -122,6 +122,8 @@ class PPO:
         self.learning_rate = learning_rate
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
 
+        self.amp = True
+
     def init_storage(
         self,
         training_type: str,
@@ -203,7 +205,9 @@ class PPO:
         mean_rnd_loss = 0 if self.rnd else None
         # Symmetry loss
         mean_symmetry_loss = 0 if self.symmetry else None
-
+        mean_amp_loss = 0
+        mean_amp_dataset = 0
+        mean_amp_ploicy = 0
         # Get mini batch generator
         if self.policy.is_recurrent:
             generator = self.storage.recurrent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
@@ -262,6 +266,7 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             ae_loss, vel_loss, rec_loss = self.policy.ae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
+            amp_loss, amp_dataset, amp_ploicy = self.policy.amp_loss(obs_batch)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()
@@ -325,6 +330,7 @@ class PPO:
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
             # print(loss)
             loss += ae_loss
+            loss += amp_loss
             # Symmetry loss
             if self.symmetry:
                 # Obtain the symmetric actions
@@ -399,6 +405,9 @@ class PPO:
             mean_ae_loss += ae_loss.item()
             mean_vel_loss += vel_loss.item()
             mean_rec_loss += rec_loss.item()
+            mean_amp_dataset += amp_dataset.item()
+            mean_amp_ploicy += amp_ploicy.item()
+            mean_amp_loss += amp_loss.item()
             # mean_kl_loss += kl_loss.item()
             # RND loss
             if mean_rnd_loss is not None:
@@ -416,6 +425,9 @@ class PPO:
         mean_vel_loss /= num_updates
         mean_rec_loss /= num_updates
         # mean_kl_loss /= num_updates
+        mean_amp_loss /= num_updates
+        mean_amp_dataset /= num_updates
+        mean_amp_ploicy /= num_updates
         # print(num_updates)
         if mean_rnd_loss is not None:
             mean_rnd_loss /= num_updates
@@ -434,6 +446,9 @@ class PPO:
             "ae/vel_loss": mean_vel_loss,
             "ae/rec_loss": mean_rec_loss,
             # "vae/kl_loss": mean_kl_loss,
+            "mean_amp_loss": mean_amp_loss,
+            "mean_amp_dataset": mean_amp_dataset,
+            "mean_amp_ploicy": mean_amp_ploicy,
         }
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss

@@ -13,6 +13,12 @@ from typing import Any, NoReturn
 import copy
 from rsl_rl.networks import MLP, EmpiricalNormalization
 
+import torch
+import csv
+import os
+
+
+
 
 class ActorCritic(nn.Module):
     is_recurrent: bool = False
@@ -98,6 +104,15 @@ class ActorCritic(nn.Module):
         else:
             self.critic_obs_normalizer = torch.nn.Identity()
 
+
+        #AMP
+        self.use_amp = True
+        self.input_dimension = 30 * 2
+        self.amp_lumbda = 10.0
+        self.amp_reward_coef = 0.4 #0.6
+        if self.use_amp:
+            self.discriminator = MLP(self.input_dimension, 1, [64, 32], activation)
+
         # Action noise
         self.noise_std_type = noise_std_type
         if self.state_dependent_std:
@@ -124,6 +139,24 @@ class ActorCritic(nn.Module):
 
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
+
+        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_data_2.csv"
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+        dataset = []
+        with open(file_path, 'r') as file:
+            data = csv.reader(file, delimiter=',')
+            # print(list(data)[:2])
+            dataset = list(data)
+        chart_offset = 1
+        dataset_float = []
+        for l in dataset[chart_offset:]:
+            l_float = [float(s) for s in l[:-12]]
+            dataset_float.append(l_float)
+        dataset_t_one_step = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True)
+        dataset_t_last_step = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True)
+        self.dataset_t = torch.cat([dataset_t_last_step, dataset_t_one_step], dim=1).to("cuda:0")
+        self.dataset_t_length = self.dataset_t.shape[0]
         
 
 
@@ -270,6 +303,37 @@ class ActorCritic(nn.Module):
         # latent_var = torch.clamp(latent_var, max=10.0, min=-20)
         # kl_loss = -0.5 * torch.mean(1 + latent_var - latent_u*latent_u - torch.exp(latent_var))
         return vel_loss*10.0 + rec_loss, vel_loss, rec_loss
+    
+    def amp_loss(self, obs):
+        ampobs = self.get_amp_obs(obs)
+        random_dataset_idx = torch.randint(low=0, high=self.dataset_t_length, size=(int(ampobs.shape[0]*0.04),))
+        random_obs_idx = torch.randint(low=0, high=ampobs.shape[0], size=(int(ampobs.shape[0]*0.04),))
+        random_obs = ampobs = ampobs[random_obs_idx, :]
+        # random_dataset = torch.zeros_like(ampobs, requires_grad=True)
+        random_dataset = self.dataset_t[random_dataset_idx,:]
+        # print("data: ", random_dataset[:3, :], "\npolicy:", random_obs[:3, :])
+        data_out = self.discriminator(random_dataset)
+        obs_out =  self.discriminator(random_obs)
+        output_grad = torch.autograd.grad(
+            outputs=data_out,  
+            inputs=random_dataset, 
+            grad_outputs=torch.ones_like(data_out),  
+            create_graph=True,  
+            retain_graph=True,  
+            only_inputs=True
+        )[0]
+        none_t = -1.0*torch.ones_like(obs_out)
+        zero_t = torch.zeros_like(random_dataset)
+        one_t = torch.ones_like(data_out)
+        loss = 0.5 * (nn.MSELoss()(data_out,one_t)+ nn.MSELoss()(obs_out,none_t)) + nn.MSELoss()(output_grad, zero_t)*self.amp_lumbda
+        return loss*0.5, data_out.mean(), obs_out.mean()
+    
+    def amp_reward(self, obs):
+        ampobs = self.get_amp_obs(obs)
+        with torch.no_grad():
+            obs_out = self.discriminator(ampobs)
+        AMPreward = self.amp_reward_coef * (torch.clamp(1 - (1/4) * torch.square(obs_out - 1), min=0))
+        return AMPreward.squeeze(1)
         
 
     def evaluate(self, obs: TensorDict, **kwargs: dict[str, Any]) -> torch.Tensor:
@@ -287,6 +351,10 @@ class ActorCritic(nn.Module):
     
     def get_extra_obs(self, obs: TensorDict) -> torch.Tensor:
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["extra"]]
+        return torch.cat(obs_list, dim=-1)
+    
+    def get_amp_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["amp"]]
         return torch.cat(obs_list, dim=-1)
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:

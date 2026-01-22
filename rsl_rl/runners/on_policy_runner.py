@@ -79,6 +79,11 @@ class OnPolicyRunner:
         lenbuffer = deque(maxlen=100)
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        if self.alg.amp:
+            cur_amp_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+            cur_task_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+            amprewbuffer = deque(maxlen=100)
+            taskrewbuffer = deque(maxlen=100)
 
         # Create buffers for logging extrinsic and intrinsic rewards
         if self.alg.rnd:
@@ -106,7 +111,9 @@ class OnPolicyRunner:
                     obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
                     # Move to device
                     obs, rewards, dones = (obs.to(self.device), rewards.to(self.device), dones.to(self.device))
-                    
+                    task_rewards = rewards.clone()
+                    amp_reward =  self.alg.policy.amp_reward(obs).clone()
+                    rewards += amp_reward  # AMP reward
                     self.alg.transition.next_observations = obs
                     # Process the step
                     self.alg.process_env_step(obs, rewards, dones, extras)
@@ -125,6 +132,9 @@ class OnPolicyRunner:
                             cur_reward_sum += rewards + intrinsic_rewards
                         else:
                             cur_reward_sum += rewards
+                        if self.alg.amp:
+                            cur_task_reward_sum += task_rewards
+                            cur_amp_reward_sum += amp_reward
                         # Update episode length
                         cur_episode_length += 1
                         # Clear data for completed episodes
@@ -133,6 +143,12 @@ class OnPolicyRunner:
                         lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                         cur_reward_sum[new_ids] = 0
                         cur_episode_length[new_ids] = 0
+                        if self.alg.amp:
+                            amprewbuffer.extend(cur_amp_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                            taskrewbuffer.extend(cur_task_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                            cur_amp_reward_sum[new_ids] = 0
+                            cur_task_reward_sum[new_ids] = 0
+
                         if self.alg.rnd:
                             erewbuffer.extend(cur_ereward_sum[new_ids][:, 0].cpu().numpy().tolist())
                             irewbuffer.extend(cur_ireward_sum[new_ids][:, 0].cpu().numpy().tolist())
@@ -229,6 +245,9 @@ class OnPolicyRunner:
                 self.writer.add_scalar("Rnd/mean_extrinsic_reward", statistics.mean(locs["erewbuffer"]), locs["it"])
                 self.writer.add_scalar("Rnd/mean_intrinsic_reward", statistics.mean(locs["irewbuffer"]), locs["it"])
                 self.writer.add_scalar("Rnd/weight", self.alg.rnd.weight, locs["it"])
+            if self.alg.amp:
+                self.writer.add_scalar("AMP/amprewbuffer", statistics.mean(locs["amprewbuffer"]), locs["it"])
+                self.writer.add_scalar("AMP/taskrewbuffer", statistics.mean(locs["taskrewbuffer"]), locs["it"])
             # Everything else
             self.writer.add_scalar("Train/mean_reward", statistics.mean(locs["rewbuffer"]), locs["it"])
             self.writer.add_scalar("Train/mean_episode_length", statistics.mean(locs["lenbuffer"]), locs["it"])
@@ -256,6 +275,11 @@ class OnPolicyRunner:
                 log_string += (
                     f"""{"Mean extrinsic reward:":>{pad}} {statistics.mean(locs["erewbuffer"]):.2f}\n"""
                     f"""{"Mean intrinsic reward:":>{pad}} {statistics.mean(locs["irewbuffer"]):.2f}\n"""
+                )
+            if self.alg.amp:
+                log_string += (
+                    f"""{"Mean amp reward:":>{pad}} {statistics.mean(locs["amprewbuffer"]):.2f}\n"""
+                    f"""{"Mean task reward:":>{pad}} {statistics.mean(locs["taskrewbuffer"]):.2f}\n"""
                 )
             log_string += f"""{"Mean reward:":>{pad}} {statistics.mean(locs["rewbuffer"]):.2f}\n"""
             # Print episode information
