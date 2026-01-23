@@ -140,7 +140,7 @@ class ActorCritic(nn.Module):
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
 
-        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_data_2.csv"
+        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs.csv"
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"文件不存在: {file_path}")
         dataset = []
@@ -151,10 +151,10 @@ class ActorCritic(nn.Module):
         chart_offset = 1
         dataset_float = []
         for l in dataset[chart_offset:]:
-            l_float = [float(s) for s in l[:-12]]
+            l_float = [float(s) for s in l]
             dataset_float.append(l_float)
-        dataset_t_one_step = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True)
-        dataset_t_last_step = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True)
+        dataset_t_one_step = torch.tensor(dataset_float[1:], dtype=torch.float32, requires_grad=True)
+        dataset_t_last_step = torch.tensor(dataset_float[:-1], dtype=torch.float32, requires_grad=True)
         self.dataset_t = torch.cat([dataset_t_last_step, dataset_t_one_step], dim=1).to("cuda:0")
         self.dataset_t_length = self.dataset_t.shape[0]
         
