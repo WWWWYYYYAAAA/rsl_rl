@@ -16,6 +16,9 @@ from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import RolloutStorage
 from rsl_rl.utils import string_to_callable
 
+import os
+import csv
+
 
 class PPO:
     """Proximal Policy Optimization algorithm (https://arxiv.org/abs/1707.06347)."""
@@ -123,6 +126,24 @@ class PPO:
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
 
         self.amp = True
+        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs.csv"
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+        dataset = []
+        with open(file_path, 'r') as file:
+            data = csv.reader(file, delimiter=',')
+            # print(list(data)[:2])
+            dataset = list(data)
+        chart_offset = 1
+        dataset_float = []
+        for l in dataset[chart_offset:]:
+            l_float = [float(s) for s in l[:]]
+            dataset_float.append(l_float)
+        # dataset_t_one_step = torch.tensor(dataset_float[1:], dtype=torch.float32, requires_grad=True)
+        # dataset_t_last_step = torch.tensor(dataset_float[:-1], dtype=torch.float32, requires_grad=True)
+        # self.dataset_t = torch.cat([dataset_t_last_step, dataset_t_one_step], dim=1).to("cuda:0")
+        self.dataset_t = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True).to(self.device)
+        # self.dataset_t_length = self.dataset_t.shape[0]
 
     def init_storage(
         self,
@@ -266,7 +287,7 @@ class PPO:
             entropy_batch = self.policy.entropy[:original_batch_size]
             # print(obs_batch.shape, next_obs_batch.shape, latent.shape, latent[:len(next_obs_batch)].shape)
             ae_loss, vel_loss, rec_loss = self.policy.ae_loss(obs_batch[:len(next_obs_batch)], next_obs_batch, latent[:len(next_obs_batch),:])
-            amp_loss, amp_dataset, amp_ploicy = self.policy.amp_loss(obs_batch)
+            amp_loss, amp_dataset, amp_ploicy = self.policy.amp_loss(obs_batch, self.dataset_t)
             # vae_loss, vel_loss, rec_loss, kl_loss = self.policy.vae_loss(obs_batch, next_obs_batch, latent)
             # print(vae_loss.shape, vel_loss.shape, rec_loss.shape, kl_loss.shape)
             # vae_loss = vae_loss.mean()

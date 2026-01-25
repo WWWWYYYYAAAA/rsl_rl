@@ -13,9 +13,8 @@ from typing import Any, NoReturn
 import copy
 from rsl_rl.networks import MLP, EmpiricalNormalization
 
-import torch
-import csv
-import os
+# import csv
+# import os
 
 
 
@@ -107,11 +106,11 @@ class ActorCritic(nn.Module):
 
         #AMP
         self.use_amp = True
-        self.input_dimension = 30 * 2
+        self.input_dimension = 30
         self.amp_lumbda = 10.0
-        self.amp_reward_coef = 0.4 #0.6
+        self.amp_reward_coef = 1.0 #0.6
         if self.use_amp:
-            self.discriminator = MLP(self.input_dimension, 1, [64, 32], activation)
+            self.discriminator = MLP(self.input_dimension, 1, [128, 128], activation)
 
         # Action noise
         self.noise_std_type = noise_std_type
@@ -140,23 +139,24 @@ class ActorCritic(nn.Module):
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
 
-        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs.csv"
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"文件不存在: {file_path}")
-        dataset = []
-        with open(file_path, 'r') as file:
-            data = csv.reader(file, delimiter=',')
-            # print(list(data)[:2])
-            dataset = list(data)
-        chart_offset = 1
-        dataset_float = []
-        for l in dataset[chart_offset:]:
-            l_float = [float(s) for s in l]
-            dataset_float.append(l_float)
-        dataset_t_one_step = torch.tensor(dataset_float[1:], dtype=torch.float32, requires_grad=True)
-        dataset_t_last_step = torch.tensor(dataset_float[:-1], dtype=torch.float32, requires_grad=True)
-        self.dataset_t = torch.cat([dataset_t_last_step, dataset_t_one_step], dim=1).to("cuda:0")
-        self.dataset_t_length = self.dataset_t.shape[0]
+        # file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs.csv"
+        # if not os.path.exists(file_path):
+        #     raise FileNotFoundError(f"文件不存在: {file_path}")
+        # dataset = []
+        # with open(file_path, 'r') as file:
+        #     data = csv.reader(file, delimiter=',')
+        #     # print(list(data)[:2])
+        #     dataset = list(data)
+        # chart_offset = 1
+        # dataset_float = []
+        # for l in dataset[chart_offset:]:
+        #     l_float = [float(s) for s in l[:]]
+        #     dataset_float.append(l_float)
+        # # dataset_t_one_step = torch.tensor(dataset_float[1:], dtype=torch.float32, requires_grad=True)
+        # # dataset_t_last_step = torch.tensor(dataset_float[:-1], dtype=torch.float32, requires_grad=True)
+        # # self.dataset_t = torch.cat([dataset_t_last_step, dataset_t_one_step], dim=1).to("cuda:0")
+        # self.dataset_t = torch.tensor(dataset_float, dtype=torch.float32, requires_grad=True).to("cuda:0").detach().requires_grad_(False)
+        # self.dataset_t_length = self.dataset_t.shape[0]
         
 
 
@@ -304,13 +304,13 @@ class ActorCritic(nn.Module):
         # kl_loss = -0.5 * torch.mean(1 + latent_var - latent_u*latent_u - torch.exp(latent_var))
         return vel_loss*10.0 + rec_loss, vel_loss, rec_loss
     
-    def amp_loss(self, obs):
+    def amp_loss(self, obs, datasets):
         ampobs = self.get_amp_obs(obs)
-        random_dataset_idx = torch.randint(low=0, high=self.dataset_t_length, size=(int(ampobs.shape[0]*0.04),))
+        random_dataset_idx = torch.randint(low=0, high=datasets.shape[0], size=(int(ampobs.shape[0]*0.04),))
         random_obs_idx = torch.randint(low=0, high=ampobs.shape[0], size=(int(ampobs.shape[0]*0.04),))
         random_obs = ampobs = ampobs[random_obs_idx, :]
         # random_dataset = torch.zeros_like(ampobs, requires_grad=True)
-        random_dataset = self.dataset_t[random_dataset_idx,:]
+        random_dataset = datasets[random_dataset_idx,:]
         # print("data: ", random_dataset[:3, :], "\npolicy:", random_obs[:3, :])
         data_out = self.discriminator(random_dataset)
         obs_out =  self.discriminator(random_obs)
