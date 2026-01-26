@@ -108,9 +108,9 @@ class ActorCritic(nn.Module):
         self.use_amp = True
         self.input_dimension = 30
         self.amp_lumbda = 10.0
-        self.amp_reward_coef = 1.0 #0.6
+        self.amp_reward_coef = 0.8 #0.6
         if self.use_amp:
-            self.discriminator = MLP(self.input_dimension, 1, [128, 128], activation)
+            self.discriminator = MLP(self.input_dimension, 1, [256, 128], activation)
 
         # Action noise
         self.noise_std_type = noise_std_type

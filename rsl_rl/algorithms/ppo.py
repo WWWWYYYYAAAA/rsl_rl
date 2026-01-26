@@ -126,7 +126,7 @@ class PPO:
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
 
         self.amp = True
-        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs3.csv"
+        file_path = "/home/wya/lab_rl/IsaacLab/rsl_rl/rsl_rl/datasets/amp_obs2.csv"
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"文件不存在: {file_path}")
         dataset = []
