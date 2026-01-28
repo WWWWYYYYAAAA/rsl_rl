@@ -124,8 +124,6 @@ class ActorCritic(nn.Module):
 
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
-        
-
 
     def reset(self, dones: torch.Tensor | None = None) -> None:
         pass
