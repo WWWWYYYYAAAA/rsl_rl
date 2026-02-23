@@ -331,7 +331,7 @@ class PPO:
                 # Note: If we did augmentation before then we don't need to augment again
                 if not self.symmetry["use_data_augmentation"]:
                     data_augmentation_func = self.symmetry["data_augmentation_func"]
-                    obs_batch, _, _ = data_augmentation_func(obs=obs_batch, actions=None, next_obs=None, env=self.symmetry["_env"])
+                    obs_batch, _ = data_augmentation_func(obs=obs_batch, actions=None, next_obs=None, env=self.symmetry["_env"])
                     # Compute number of augmentations per sample
                     num_aug = int(obs_batch.shape[0] / original_batch_size)
 
@@ -343,7 +343,7 @@ class PPO:
                 # earlier since that action was sampled from the distribution. However, the symmetry loss is computed
                 # using the mean of the distribution.
                 action_mean_orig = mean_actions_batch[:original_batch_size]
-                _, actions_mean_symm_batch, _ = data_augmentation_func(
+                _, actions_mean_symm_batch = data_augmentation_func(
                     obs=None, actions=action_mean_orig, next_obs=None, env=self.symmetry["_env"]
                 )
 

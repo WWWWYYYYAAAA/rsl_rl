@@ -68,7 +68,7 @@ class ActorCritic(nn.Module):
         if self.VAE_enable:
             self.estimator = MLP(num_actor_obs, (self.VAE_latent_dim+self.VAE_latent_estimate_dim), VAE_encoder_hiden_dim, activation)
             self.decoder = MLP(self.VAE_latent_dim+self.VAE_latent_estimate_dim, int(num_actor_obs/history_length), VAE_decoder_hiden_dim, activation)
-            self.actor =  MLP(int(num_actor_obs/history_length)*2+self.VAE_latent_dim+self.VAE_latent_estimate_dim, num_actions, actor_hidden_dims, activation)
+            self.actor =  MLP(int(num_actor_obs/history_length)+self.VAE_latent_dim+self.VAE_latent_estimate_dim, num_actions, actor_hidden_dims, activation)
             self.num_actions = num_actions
             # self.actor = AssembleActor(activation)
             print(f"VAE Estimator MLP: {self.estimator}")
@@ -217,14 +217,14 @@ class ActorCritic(nn.Module):
     def dwaq_inference(self, obs) -> torch.Tensor:
         latent = self.estimator(obs)
         # lantent = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num*2:],latent), dim=-1))
+        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1))
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent), dim=-1))
     
     def dwaq_learn(self, obs):
         latent = self.estimator(obs)
         # lantent_u = lantent[...,:self.VAE_latent_dim+self.VAE_latent_estimate_dim]
         # latent = torch.concatenate((latent[..., :self.VAE_latent_dim],latent[...,self.VAE_latent_dim:].detach()), dim=-1)
-        return self.actor(torch.cat((obs[...,-self.obs_one_step_num*2:],latent), dim=-1)), latent
+        return self.actor(torch.cat((obs[...,-self.obs_one_step_num:],latent), dim=-1)), latent
         # return self.actor(torch.cat((obs[...,self.one_step_idx],lantent_u), dim=-1)), lantent
 
 
