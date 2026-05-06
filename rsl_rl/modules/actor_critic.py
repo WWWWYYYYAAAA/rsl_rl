@@ -12,7 +12,7 @@ from torch.distributions import Normal
 from typing import Any, NoReturn
 import copy
 from rsl_rl.networks import MLP, EmpiricalNormalization
-
+from .logger import LatentCSVLogger
 
 class ActorCritic(nn.Module):
     is_recurrent: bool = False
@@ -124,7 +124,9 @@ class ActorCritic(nn.Module):
 
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
-        
+        self.latentlogger = LatentCSVLogger("/home/ubuntu/lab_rl/IsaacLab/rsl_rl/rsl_rl/modules/log/latent_vectors.csv", queue_length=10, batch_size=4096)
+        self.group_ratios = [0.4, 0.2, 0.05, 0.15, 0.2]
+        self.cnt=0
 
 
     def reset(self, dones: torch.Tensor | None = None) -> None:
@@ -269,6 +271,11 @@ class ActorCritic(nn.Module):
         rec_loss = nn.MSELoss()(next_step_obs, next_step_obs_estimate)
         # latent_var = torch.clamp(latent_var, max=10.0, min=-20)
         # kl_loss = -0.5 * torch.mean(1 + latent_var - latent_u*latent_u - torch.exp(latent_var))
+        # print(latent[,:self.VAE_latent_dim].shape, ">>>>>>")
+        self.cnt+=1
+        if self.cnt%50==0:
+            latent_vectors = latent[:4096,:self.VAE_latent_dim].detach().cpu().numpy()
+            self.latentlogger.append_batch(latent_vectors, self.group_ratios)
         return vel_loss*10.0 + rec_loss, vel_loss, rec_loss
         
 
